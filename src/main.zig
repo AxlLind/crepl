@@ -31,7 +31,25 @@ fn run_binary(path: []const u8, allocator: std.mem.Allocator) anyerror!std.proce
     });
 }
 
+fn installSignalHandler() !void {
+    const internal_handler = struct {
+        fn handle(sig: c_int) callconv(.C) void {
+            if (sig != std.os.SIG.INT) {
+                std.process.exit(1);
+            }
+            std.debug.print("Use Ctrl+D to exit...\n>> ", .{});
+        }
+    };
+    const action = std.os.Sigaction{
+        .handler = .{ .handler = internal_handler.handle },
+        .mask = std.os.empty_sigset,
+        .flags = 0,
+    };
+    try std.os.sigaction(std.os.SIG.INT, &action, null);
+}
+
 pub fn main() anyerror!void {
+    try installSignalHandler();
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
 
