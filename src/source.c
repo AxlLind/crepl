@@ -3,6 +3,7 @@
 #include <ctype.h>
 #include <errno.h>
 #include <float.h>
+#include <fcntl.h>
 #include <limits.h>
 #include <locale.h>
 #include <math.h>
@@ -40,8 +41,38 @@
   #include <stdckdint.h>
 #endif
 
-{s}
+static void crepl_assert(int ok, const char *msg) {{
+  if (ok)
+    return;
+  perror(msg);
+  exit(1);
+}}
+
+static int crepl_supress(FILE *f, int fd) {{
+  int ret = dup(fd);
+  int nullfd = open("/dev/null", O_WRONLY);
+  crepl_assert(nullfd != -1, "open");
+  crepl_assert(dup2(nullfd, 1) != -1, "dup2");
+  crepl_assert(close(nullfd) != -1, "close");
+  return ret;
+}}
+
+static void crepl_resume(FILE *f, int saved_fd, int fd) {{
+  crepl_assert(fflush(f) == 0, "fflush");
+  crepl_assert(dup2(saved_fd, fd) != -1, "dup2");
+  crepl_assert(close(saved_fd) != -1, "close");
+}}
+
+{[includes]s}
 
 int main(void) {{
-  {s}
+  int stdout_fd = crepl_supress(stdout, 1);
+  int stderr_fd = crepl_supress(stderr, 2);
+
+  {[exprs]s}
+
+  crepl_resume(stdout, stdout_fd, 1);
+  crepl_resume(stderr, stderr_fd, 2);
+
+  {[expr]s}
 }}
