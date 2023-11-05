@@ -21,7 +21,7 @@ fn sig_handler(sig: c_int) callconv(.C) void {
     if (sig != std.os.SIG.INT) {
         std.process.exit(1);
     }
-    std.debug.print("Use Ctrl+D to exit...\n>> ", .{});
+    std.os.close(0);
 }
 
 fn installSignalHandler() !void {
@@ -54,7 +54,7 @@ pub fn main() anyerror!void {
     var msg_buf: [4096]u8 = undefined;
     while (true) {
         std.debug.print(">> ", .{});
-        var msg = try r.readUntilDelimiterOrEof(&msg_buf, '\n') orelse break;
+        var msg = r.readUntilDelimiterOrEof(&msg_buf, '\n') catch break orelse break;
 
         var tmp_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
         defer tmp_arena.deinit();
@@ -63,7 +63,7 @@ pub fn main() anyerror!void {
         try cfile.writeAll(try c_source(includes.items, exprs.items, msg, tmp_arena.allocator()));
         const compile_result = try std.ChildProcess.run(.{
             .allocator = tmp_arena.allocator(),
-            .argv = &[_][]const u8{ "gcc", TMPFILE, "-o", BINFILE },
+            .argv = &.{ "gcc", TMPFILE, "-o", BINFILE },
         });
         if (compile_result.term.Exited != 0) {
             std.debug.print("{s}", .{compile_result.stderr});
@@ -72,7 +72,7 @@ pub fn main() anyerror!void {
 
         const run_result = try std.ChildProcess.run(.{
             .allocator = tmp_arena.allocator(),
-            .argv = &[_][]const u8{BINFILE},
+            .argv = &.{BINFILE},
         });
         if (run_result.term.Exited != 0) {
             std.debug.print("Exited with {}!\n{s}", .{ run_result.term.Exited, run_result.stderr });
