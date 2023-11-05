@@ -41,38 +41,40 @@
   #include <stdckdint.h>
 #endif
 
-static void crepl_assert(int ok, const char *msg) {{
+static void crepl_assert(const char *msg, int ok) {{
   if (ok)
     return;
   perror(msg);
   exit(1);
 }}
 
-static int crepl_supress(FILE *f, int fd) {{
-  int ret = dup(fd);
+static int crepl_stdout = 1;
+static int crepl_stderr = 2;
+
+static void crepl_supress_output(void) {{
+  crepl_stdout = dup(1);
+  crepl_stderr = dup(2);
   int nullfd = open("/dev/null", O_WRONLY);
-  crepl_assert(nullfd != -1, "open");
-  crepl_assert(dup2(nullfd, 1) != -1, "dup2");
-  crepl_assert(close(nullfd) != -1, "close");
-  return ret;
+  crepl_assert("open", nullfd != -1);
+  crepl_assert("dup2", dup2(nullfd, 1) != -1);
+  crepl_assert("dup2", dup2(nullfd, 2) != -1);
+  crepl_assert("close", close(nullfd) != -1);
 }}
 
-static void crepl_resume(FILE *f, int saved_fd, int fd) {{
-  crepl_assert(fflush(f) == 0, "fflush");
-  crepl_assert(dup2(saved_fd, fd) != -1, "dup2");
-  crepl_assert(close(saved_fd) != -1, "close");
+static void crepl_resume_output(void) {{
+  crepl_assert("fflush", fflush(stdout) == 0);
+  crepl_assert("fflush", fflush(stderr) == 0);
+  crepl_assert("dup2", dup2(crepl_stdout, 1) != -1);
+  crepl_assert("dup2", dup2(crepl_stderr, 2) != -1);
+  crepl_assert("close", close(crepl_stdout) != -1);
+  crepl_assert("close", close(crepl_stderr) != -1);
 }}
 
 {[includes]s}
 
 int main(void) {{
-  int stdout_fd = crepl_supress(stdout, 1);
-  int stderr_fd = crepl_supress(stderr, 2);
-
+  crepl_supress_output();
   {[exprs]s}
-
-  crepl_resume(stdout, stdout_fd, 1);
-  crepl_resume(stderr, stderr_fd, 2);
-
+  crepl_resume_output();
   {[expr]s}
 }}
