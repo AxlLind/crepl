@@ -85,21 +85,21 @@ pub fn main() anyerror!void {
             std.debug.print("{s}\n", .{compile_result.stderr});
             continue;
         }
-        try exprs.append(try arena.allocator().dupe(u8, msg));
 
         const run_result = try run_binary(BINFILE, std.heap.page_allocator);
         defer std.heap.page_allocator.free(run_result.stderr);
         defer std.heap.page_allocator.free(run_result.stdout);
-        std.debug.print("(result {})\n{s}{s}", .{ run_result.term.Exited, run_result.stdout, run_result.stderr });
+        if (run_result.term.Exited != 0) {
+            std.debug.print("Exited with {}!\n", .{run_result.term.Exited});
+            if (run_result.stderr.len > 0) {
+                std.debug.print("{s}\n", .{run_result.stderr});
+            }
+            continue;
+        }
+
+        std.debug.print("{s}", .{run_result.stdout});
+        try exprs.append(try arena.allocator().dupe(u8, msg));
     }
 
     std.debug.print("\n", .{});
-    std.debug.print("includes:\n", .{});
-    for (includes.items) |include| {
-        std.debug.print("{s}\n", .{include});
-    }
-    std.debug.print("exprs:\n", .{});
-    for (exprs.items) |expr| {
-        std.debug.print("{s}\n", .{expr});
-    }
 }
