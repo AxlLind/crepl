@@ -17,24 +17,17 @@ fn c_source(
     return std.fmt.allocPrint(allocator, SOURCE, .{ .includes = include_str, .exprs = expr_str, .expr = expr });
 }
 
-fn sig_handler(sig: c_int) callconv(.C) void {
-    if (sig != std.os.SIG.INT) {
-        std.process.exit(1);
-    }
-    std.os.close(0);
-}
-
-fn installSignalHandler() !void {
-    const action = std.os.Sigaction{
-        .handler = .{ .handler = sig_handler },
-        .mask = std.os.empty_sigset,
-        .flags = 0,
-    };
-    try std.os.sigaction(std.os.SIG.INT, &action, null);
+fn sig_handler(_: c_int) callconv(.C) void {
+    std.os.close(std.os.STDIN_FILENO);
 }
 
 pub fn main() anyerror!void {
-    try installSignalHandler();
+    try std.os.sigaction(std.os.SIG.INT, &.{
+        .handler = .{ .handler = sig_handler },
+        .mask = std.os.empty_sigset,
+        .flags = 0,
+    }, null);
+
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
 
