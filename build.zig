@@ -23,6 +23,9 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    exe.linkLibC();
+    exe.addSystemIncludePath(.{ .path = "/usr/lib/llvm-14/include/" });
+    exe.linkSystemLibrary("clang-14");
 
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default
