@@ -1,8 +1,21 @@
 const std = @import("std");
 
+const clang = @cImport(@cInclude("clang-c/Index.h"));
 const SOURCE = @embedFile("./source.c");
 const TMPFILE = "/tmp/crepl.c";
 const BINFILE = "/tmp/crepl.bin";
+
+fn get_last_child(c: clang.CXCursor) ?clang.CXCursor {
+    const f = struct {
+        pub fn visit(cursor: clang.CXCursor, _: clang.CXCursor, data: clang.CXClientData) callconv(.C) clang.enum_CXChildVisitResult {
+            @as(*?clang.CXCursor, @ptrCast(@alignCast(data orelse unreachable))).* = cursor;
+            return clang.CXVisit_Continue;
+        }
+    }.visit;
+    var res: ?clang.CXCursor = null;
+    _ = clang.clang_visitChildren(c, f, &res);
+    return res;
+}
 
 fn c_source(
     includes: []const []const u8,
@@ -27,7 +40,6 @@ pub fn main() anyerror!void {
         .mask = std.os.empty_sigset,
         .flags = 0,
     }, null);
-
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
 
@@ -62,6 +74,20 @@ pub fn main() anyerror!void {
             std.debug.print("{s}", .{compile_result.stderr});
             continue;
         }
+
+        var index = clang.clang_createIndex(0, 0);
+        defer clang.clang_disposeIndex(index);
+        var unit = clang.clang_parseTranslationUnit(index, TMPFILE, null, 0, null, 0, 0);
+        defer clang.clang_disposeTranslationUnit(unit);
+        var main_fn_cursor = get_last_child(clang.clang_getTranslationUnitCursor(unit)) orelse unreachable;
+        var main_block_cursor = get_last_child(main_fn_cursor) orelse unreachable;
+        var new_expr_cursor = get_last_child(main_block_cursor) orelse unreachable;
+
+        var name = std.mem.span(clang.clang_getCString(clang.clang_getCursorSpelling(new_expr_cursor)));
+        var cursor_kind = clang.clang_getCString(clang.clang_getTypeKindSpelling(clang.clang_getCursorKind(new_expr_cursor)));
+        var kind = if (cursor_kind == null) "" else std.mem.span(cursor_kind);
+        var tpe = std.mem.span(clang.clang_getCString(clang.clang_getTypeKindSpelling(clang.clang_getCursorType(new_expr_cursor).kind)));
+        std.debug.print("found '{s}': kind={s}, tpe={s}, is_expr={}\n", .{ name, kind, tpe, clang.clang_isExpression(clang.clang_getCursorKind(new_expr_cursor)) != 0 });
 
         const run_result = try std.ChildProcess.run(.{
             .allocator = tmp_arena.allocator(),
