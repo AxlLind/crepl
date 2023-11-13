@@ -17,6 +17,21 @@ fn get_last_child(c: clang.CXCursor) ?clang.CXCursor {
     return res;
 }
 
+fn handle_builtin_cmd(
+    msg: []const u8,
+    includes: []const []const u8,
+    exprs: []const []const u8,
+    allocator: std.mem.Allocator,
+) !void {
+    const cmd = std.mem.trim(u8, msg[1..], " \t");
+    if (std.mem.eql(u8, cmd, "print_source")) {
+        const src = try c_source(includes, exprs, "", allocator);
+        std.debug.print("{s}", .{src});
+        return;
+    }
+    std.debug.print("Unrecognized builtin command '{s}'\n", .{cmd});
+}
+
 fn c_source(
     includes: []const []const u8,
     exprs: []const []const u8,
@@ -63,6 +78,11 @@ pub fn main() anyerror!void {
 
         var tmp_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
         defer tmp_arena.deinit();
+
+        if (msg.len > 1 and msg[0] == ':') {
+            try handle_builtin_cmd(msg, includes.items, exprs.items, tmp_arena.allocator());
+            continue;
+        }
 
         try cfile.seekTo(0);
         try cfile.writeAll(try c_source(includes.items, exprs.items, msg, tmp_arena.allocator()));
