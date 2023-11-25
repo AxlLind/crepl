@@ -5,6 +5,17 @@ const SOURCE = @embedFile("./source.c");
 const TMPFILE = "/tmp/crepl.c";
 const BINFILE = "/tmp/crepl.bin";
 
+const Command = enum {
+    printSource,
+
+    fn parse(s: []const u8) ?Command {
+        if (std.mem.eql(u8, s, "print_source")) {
+            return .printSource;
+        }
+        return null;
+    }
+};
+
 fn expr_print_str(expr: []const u8, tpe: c_uint, allocator: std.mem.Allocator) !?[]const u8 {
     const fmt = switch (tpe) {
         clang.CXType_Bool => "d",
@@ -37,21 +48,6 @@ fn get_last_child(c: clang.CXCursor) ?clang.CXCursor {
     var res: ?clang.CXCursor = null;
     _ = clang.clang_visitChildren(c, f, &res);
     return res;
-}
-
-fn handle_builtin_cmd(
-    msg: []const u8,
-    includes: []const []const u8,
-    exprs: []const []const u8,
-    allocator: std.mem.Allocator,
-) !void {
-    const cmd = std.mem.trim(u8, msg[1..], " \t");
-    if (std.mem.eql(u8, cmd, "print_source")) {
-        const src = try c_source(includes, exprs, "", allocator);
-        std.debug.print("{s}", .{src});
-        return;
-    }
-    std.debug.print("Unrecognized builtin command '{s}'\n", .{cmd});
 }
 
 fn c_source(
@@ -109,7 +105,17 @@ pub fn main() anyerror!void {
         defer tmp_arena.deinit();
 
         if (msg.len > 1 and msg[0] == ':') {
-            try handle_builtin_cmd(msg, includes.items, exprs.items, tmp_arena.allocator());
+            const cmdstr = std.mem.trim(u8, msg[1..], " \t");
+            const cmd = Command.parse(cmdstr) orelse {
+                std.debug.print("Unrecognized builtin command '{s}'\n", .{cmdstr});
+                continue;
+            };
+            switch (cmd) {
+                .printSource => {
+                    const src = try c_source(includes.items, exprs.items, "// next expression", tmp_arena.allocator());
+                    std.debug.print("{s}", .{src});
+                },
+            }
             continue;
         }
 
@@ -118,7 +124,6 @@ pub fn main() anyerror!void {
             tmp_arena.allocator(),
         );
         if (compile_result.term.Exited != 0) {
-            std.debug.print("{s}", .{try c_source(includes.items, exprs.items, msg, tmp_arena.allocator())});
             std.debug.print("{s}", .{compile_result.stderr});
             continue;
         }
