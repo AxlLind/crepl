@@ -92,7 +92,7 @@ pub fn main() anyerror!void {
         .mask = std.os.empty_sigset,
         .flags = 0,
     }, null);
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    var arena = std.heap.ArenaAllocator.init(std.heap.c_allocator);
     defer {
         arena.deinit();
         std.fs.deleteFileAbsolute(TMPFILE) catch {};
@@ -109,7 +109,7 @@ pub fn main() anyerror!void {
         std.debug.print(">> ", .{});
         const expr = r.reader().readUntilDelimiterOrEof(&msg_buf, '\n') catch break orelse break;
 
-        var tmp_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+        var tmp_arena = std.heap.ArenaAllocator.init(std.heap.c_allocator);
         var tmp_alloc = tmp_arena.allocator();
         defer tmp_arena.deinit();
 
