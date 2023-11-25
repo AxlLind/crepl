@@ -5,6 +5,14 @@ const SOURCE = @embedFile("./source.c");
 const TMPFILE = "/tmp/crepl.c";
 const BINFILE = "/tmp/crepl.bin";
 
+const help_text =
+    \\usage: crepl [options]
+    \\
+    \\options:
+    \\-h, --help  - print this help text
+    \\
+;
+
 const Command = enum {
     printSource,
     quit,
@@ -107,17 +115,24 @@ fn sig_handler(_: c_int) callconv(.C) void {
 }
 
 pub fn main() anyerror!void {
-    try std.os.sigaction(std.os.SIG.INT, &.{
-        .handler = .{ .handler = sig_handler },
-        .mask = std.os.empty_sigset,
-        .flags = 0,
-    }, null);
     var arena = std.heap.ArenaAllocator.init(std.heap.c_allocator);
     defer {
         arena.deinit();
         std.fs.deleteFileAbsolute(TMPFILE) catch {};
         std.fs.deleteFileAbsolute(BINFILE) catch {};
     }
+    const args = try std.process.argsAlloc(arena.allocator());
+    for (args[1..]) |arg| {
+        if (std.mem.eql(u8, arg, "-h") or std.mem.eql(u8, arg, "--help")) {
+            std.debug.print("{s}\n{s}\n", .{ help_text, command_help });
+            return;
+        }
+    }
+    try std.os.sigaction(std.os.SIG.INT, &.{
+        .handler = .{ .handler = sig_handler },
+        .mask = std.os.empty_sigset,
+        .flags = 0,
+    }, null);
 
     var includes = std.ArrayList([]u8).init(arena.allocator());
     var exprs = std.ArrayList([]u8).init(arena.allocator());
