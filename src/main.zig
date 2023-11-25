@@ -7,10 +7,14 @@ const BINFILE = "/tmp/crepl.bin";
 
 const Command = enum {
     printSource,
+    quit,
 
     fn parse(s: []const u8) ?Command {
         if (std.mem.eql(u8, s, "print_source")) {
             return .printSource;
+        }
+        if (std.mem.eql(u8, s, "q") or std.mem.eql(u8, s, "quit")) {
+            return .quit;
         }
         return null;
     }
@@ -115,6 +119,7 @@ pub fn main() anyerror!void {
                     const src = try c_source(includes.items, exprs.items, "// next expression", tmp_arena.allocator());
                     std.debug.print("{s}", .{src});
                 },
+                .quit => break,
             }
             continue;
         }
