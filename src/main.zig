@@ -8,14 +8,16 @@ const BINFILE = "/tmp/crepl.bin";
 const Command = enum {
     printSource,
     quit,
+    help,
 
-    const mapping = [_]struct { []const []const u8, Command }{
-        .{ &.{"print_source"}, .printSource },
-        .{ &.{ "q", "quit" }, .quit },
+    const info = [_]struct { []const []const u8, Command, []const u8 }{
+        .{ &.{"print_source"}, .printSource, "print the C source being compiled" },
+        .{ &.{ "q", "quit" }, .quit, "quit the repl" },
+        .{ &.{ "h", "help" }, .help, "print this help text" },
     };
 
     fn parse(s: []const u8) ?Command {
-        for (mapping) |t| {
+        for (info) |t| {
             for (t.@"0") |cmd| {
                 if (std.mem.eql(u8, s, cmd))
                     return t.@"1";
@@ -23,6 +25,24 @@ const Command = enum {
         }
         return null;
     }
+};
+
+const command_help = blk: {
+    var text: []const u8 = "Type :command to execute a meta command.\n\ncommand:";
+    var lines: [Command.info.len][]const u8 = undefined;
+    var columns = 0;
+    for (Command.info, 0..) |t, i| {
+        var s: []const u8 = "";
+        for (t.@"0") |cmd| {
+            s = s ++ ", " ++ cmd;
+        }
+        lines[i] = s[2..];
+        columns = @max(columns, lines[i].len);
+    }
+    for (lines, 0..) |l, i| {
+        text = text ++ "\n" ++ l ++ (" " ** (columns - l.len)) ++ "  - " ++ Command.info[i].@"2";
+    }
+    break :blk text;
 };
 
 fn expr_print_str(expr: []const u8, tpe: c_uint, allocator: std.mem.Allocator) !?[]const u8 {
@@ -125,6 +145,7 @@ pub fn main() anyerror!void {
                     std.debug.print("{s}", .{src});
                 },
                 .quit => break,
+                .help => std.debug.print("{s}\n", .{command_help}),
             }
             continue;
         }
