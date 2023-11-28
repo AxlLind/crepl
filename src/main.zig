@@ -19,7 +19,7 @@ const Command = enum {
     help,
 
     const info = [_]struct { []const []const u8, Command, []const u8 }{
-        .{ &.{"print_source"}, .printSource, "print the C source being compiled" },
+        .{ &.{"print-source"}, .printSource, "print the C source being compiled" },
         .{ &.{ "q", "quit" }, .quit, "quit the repl" },
         .{ &.{ "h", "help" }, .help, "print this help text" },
     };
@@ -151,7 +151,7 @@ pub fn main() anyerror!void {
         if (expr.len > 1 and expr[0] == ':') {
             const cmdstr = std.mem.trim(u8, expr[1..], " \t");
             const cmd = Command.parse(cmdstr) orelse {
-                std.debug.print("Unrecognized builtin command '{s}'\n", .{cmdstr});
+                std.debug.print("Unrecognized builtin command '{s}', see :help\n", .{cmdstr});
                 continue;
             };
             switch (cmd) {
@@ -182,9 +182,8 @@ pub fn main() anyerror!void {
         const main_block_cursor = get_last_child(main_fn_cursor) orelse unreachable;
         const new_expr_cursor = get_last_child(main_block_cursor) orelse unreachable;
 
-        const kind = clang.clang_getCursorKind(new_expr_cursor);
-        const tpe = clang.clang_getCursorType(new_expr_cursor);
-        if (clang.clang_isExpression(kind) != 0) {
+        if (clang.clang_isExpression(clang.clang_getCursorKind(new_expr_cursor)) != 0) {
+            const tpe = clang.clang_getCursorType(new_expr_cursor);
             if (try expr_print_str(expr, tpe.kind, tmp_alloc)) |s| {
                 const comp_result = try write_and_compile(
                     try c_source(includes.items, exprs.items, s, tmp_alloc),
