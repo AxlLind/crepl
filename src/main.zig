@@ -13,6 +13,26 @@ const help_text =
     \\
 ;
 
+const CompilationContext = struct {
+    exprs: std.ArrayList([]u8),
+    includes: std.ArrayList([]u8),
+
+    fn init(allocator: std.mem.Allocator) !CompilationContext {
+        return .{
+            .exprs = std.ArrayList([]u8).init(allocator),
+            .includes = std.ArrayList([]u8).init(allocator),
+        };
+    }
+
+    fn get_source(self: CompilationContext, expr: []const u8, allocator: std.mem.Allocator) ![]u8 {
+        const include_str = try std.mem.join(allocator, "\n", self.includes.items);
+        defer allocator.free(include_str);
+        const expr_str = try std.mem.join(allocator, "\n  ", self.exprs.items);
+        defer allocator.free(expr_str);
+        return std.fmt.allocPrint(allocator, SOURCE, .{ .includes = include_str, .exprs = expr_str, .expr = expr });
+    }
+};
+
 const Command = enum {
     printSource,
     quit,
@@ -87,23 +107,10 @@ fn get_last_child(c: clang.CXCursor) ?clang.CXCursor {
     return res;
 }
 
-fn c_source(
-    includes: []const []const u8,
-    exprs: []const []const u8,
-    expr: []const u8,
-    allocator: std.mem.Allocator,
-) ![]u8 {
-    const include_str = try std.mem.join(allocator, "\n", includes);
-    defer allocator.free(include_str);
-    const expr_str = try std.mem.join(allocator, "\n  ", exprs);
-    defer allocator.free(expr_str);
-    return std.fmt.allocPrint(allocator, SOURCE, .{ .includes = include_str, .exprs = expr_str, .expr = expr });
-}
-
-fn write_and_compile(src: []const u8, allocator: std.mem.Allocator) !std.ChildProcess.RunResult {
+fn write_and_compile(context: CompilationContext, expr: []const u8, allocator: std.mem.Allocator) !std.ChildProcess.RunResult {
     var cfile = try std.fs.createFileAbsolute(TMPFILE, .{ .truncate = true });
     defer cfile.close();
-    try cfile.writeAll(src);
+    try cfile.writeAll(try context.get_source(expr, allocator));
     return std.ChildProcess.run(.{
         .allocator = allocator,
         .argv = &.{ "gcc", TMPFILE, "-o", BINFILE },
@@ -114,7 +121,7 @@ fn sig_handler(_: c_int) callconv(.C) void {
     std.os.close(std.os.STDIN_FILENO);
 }
 
-pub fn main() anyerror!void {
+pub fn main() !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.c_allocator);
     defer {
         arena.deinit();
@@ -134,8 +141,7 @@ pub fn main() anyerror!void {
         .flags = 0,
     }, null);
 
-    var includes = std.ArrayList([]u8).init(arena.allocator());
-    var exprs = std.ArrayList([]u8).init(arena.allocator());
+    var context = try CompilationContext.init(arena.allocator());
 
     const in = std.io.getStdIn();
     var r = std.io.bufferedReader(in.reader());
@@ -155,20 +161,14 @@ pub fn main() anyerror!void {
                 continue;
             };
             switch (cmd) {
-                .printSource => {
-                    const src = try c_source(includes.items, exprs.items, "// next expr", tmp_alloc);
-                    std.debug.print("{s}", .{src});
-                },
+                .printSource => std.debug.print("{s}", .{try context.get_source("// next expr", tmp_alloc)}),
                 .quit => break,
                 .help => std.debug.print("{s}\n", .{command_help}),
             }
             continue;
         }
 
-        const compile_result = try write_and_compile(
-            try c_source(includes.items, exprs.items, expr, tmp_alloc),
-            tmp_alloc,
-        );
+        const compile_result = try write_and_compile(context, expr, tmp_alloc);
         if (compile_result.term.Exited != 0) {
             std.debug.print("{s}", .{compile_result.stderr});
             continue;
@@ -185,10 +185,7 @@ pub fn main() anyerror!void {
         if (clang.clang_isExpression(clang.clang_getCursorKind(new_expr_cursor)) != 0) {
             const tpe = clang.clang_getCursorType(new_expr_cursor);
             if (try expr_print_str(expr, tpe.kind, tmp_alloc)) |s| {
-                const comp_result = try write_and_compile(
-                    try c_source(includes.items, exprs.items, s, tmp_alloc),
-                    tmp_alloc,
-                );
+                const comp_result = try write_and_compile(context, s, tmp_alloc);
                 if (comp_result.term.Exited != 0) {
                     std.debug.print("{s}", .{comp_result.stderr});
                     continue;
@@ -206,7 +203,7 @@ pub fn main() anyerror!void {
         }
 
         std.debug.print("{s}", .{run_result.stdout});
-        try exprs.append(try arena.allocator().dupe(u8, expr));
+        try context.exprs.append(try arena.allocator().dupe(u8, expr));
     }
     std.debug.print("\n", .{});
 }
