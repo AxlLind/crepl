@@ -215,6 +215,16 @@ pub fn main() !void {
             continue;
         }
 
+        if (std.mem.startsWith(u8, expr, "#include")) {
+            try context.includes.append(try arena.allocator().dupe(u8, expr));
+            const compile_result = try compile(context, "", tmp_alloc);
+            if (compile_result.term.Exited != 0) {
+                print("{s}", .{compile_result.stderr});
+                _ = context.includes.pop();
+            }
+            continue;
+        }
+
         const compile_result = try compile(context, expr, tmp_alloc);
         if (compile_result.term.Exited != 0) {
             print("{s}", .{compile_result.stderr});
