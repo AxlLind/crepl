@@ -48,6 +48,7 @@ const CompilationContext = struct {
 const Command = enum {
     flag,
     compiler,
+    command,
     source,
     quit,
     help,
@@ -60,6 +61,7 @@ const Command = enum {
         // zig fmt: off
         .{ .cmds = &.{"flag"},        .cmd = .flag,     .help = "add a compiler flag" },
         .{ .cmds = &.{"compiler"},    .cmd = .compiler, .help = "set the c compiler" },
+        .{ .cmds = &.{"command"},     .cmd = .command,  .help = "show the compiler command" },
         .{ .cmds = &.{"source"},      .cmd = .source,   .help = "print the C source being compiled" },
         .{ .cmds = &.{ "q", "quit" }, .cmd = .quit,     .help = "quit the repl" },
         .{ .cmds = &.{ "h", "help" }, .cmd = .help,     .help = "print this help text" },
@@ -193,6 +195,10 @@ pub fn main() !void {
                 .compiler => {
                     const compiler = std.mem.trim(u8, expr[9..], " \t");
                     context.compiler = try arena.allocator().dupe(u8, compiler);
+                },
+                .command => {
+                    const command = try context.compilation_command(tmp_alloc);
+                    std.debug.print("{s}\n", .{try std.mem.join(tmp_alloc, " ", command.items)});
                 },
                 .source => std.debug.print("{s}", .{try context.source("// next expr", tmp_alloc)}),
                 .quit => break,
