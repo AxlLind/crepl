@@ -60,12 +60,12 @@ const Command = enum {
         help: []const u8,
     }{
         // zig fmt: off
-        .{ .cmds = &.{"flag"},        .cmd = .flag,     .help = "add a compiler flag" },
-        .{ .cmds = &.{"compiler"},    .cmd = .compiler, .help = "set the c compiler" },
-        .{ .cmds = &.{"command"},     .cmd = .command,  .help = "show the compiler command" },
-        .{ .cmds = &.{"source"},      .cmd = .source,   .help = "print the C source being compiled" },
-        .{ .cmds = &.{ "q", "quit" }, .cmd = .quit,     .help = "quit the repl" },
-        .{ .cmds = &.{ "h", "help" }, .cmd = .help,     .help = "print this help text" },
+        .{ .cmd = .flag,     .cmds = &.{"flag"},      .help = "add a compiler flag"               },
+        .{ .cmd = .compiler, .cmds = &.{"compiler"},  .help = "set the c compiler"                },
+        .{ .cmd = .command,  .cmds = &.{"command"},   .help = "show the compiler command"         },
+        .{ .cmd = .source,   .cmds = &.{"source"},    .help = "print the C source being compiled" },
+        .{ .cmd = .quit,     .cmds = &.{"q", "quit"}, .help = "quit the repl"                     },
+        .{ .cmd = .help,     .cmds = &.{"h", "help"}, .help = "print this help text"              },
         // zig fmt: on
     };
 
@@ -125,7 +125,7 @@ fn expr_print_str(expr: []const u8, tpe: c_uint, allocator: std.mem.Allocator) !
 
 fn get_last_child(c: clang.CXCursor) ?clang.CXCursor {
     const f = struct {
-        pub fn visit(cursor: clang.CXCursor, _: clang.CXCursor, data: clang.CXClientData) callconv(.C) clang.enum_CXChildVisitResult {
+        fn visit(cursor: clang.CXCursor, _: clang.CXCursor, data: clang.CXClientData) callconv(.C) clang.enum_CXChildVisitResult {
             @as(*?clang.CXCursor, @ptrCast(@alignCast(data orelse unreachable))).* = cursor;
             return clang.CXVisit_Continue;
         }
@@ -135,7 +135,7 @@ fn get_last_child(c: clang.CXCursor) ?clang.CXCursor {
     return res;
 }
 
-fn write_and_compile(context: CompilationContext, expr: []const u8, allocator: std.mem.Allocator) !std.ChildProcess.RunResult {
+fn compile(context: CompilationContext, expr: []const u8, allocator: std.mem.Allocator) !std.ChildProcess.RunResult {
     var cfile = try std.fs.createFileAbsolute(TMPFILE, .{ .truncate = true });
     defer cfile.close();
     try cfile.writeAll(try context.source(expr, allocator));
@@ -143,8 +143,18 @@ fn write_and_compile(context: CompilationContext, expr: []const u8, allocator: s
     return std.ChildProcess.run(.{ .allocator = allocator, .argv = cmd.items });
 }
 
-fn sig_handler(_: c_int) callconv(.C) void {
-    std.os.close(std.os.STDIN_FILENO);
+fn install_sigint_handler() !void {
+    const handler = struct {
+        fn handler(_: c_int) callconv(.C) void {
+            std.os.close(std.os.STDIN_FILENO);
+        }
+    }.handler;
+    const act = .{
+        .handler = .{ .handler = handler },
+        .mask = std.os.empty_sigset,
+        .flags = 0,
+    };
+    try std.os.sigaction(std.os.SIG.INT, &act, null);
 }
 
 pub fn main() !void {
@@ -161,26 +171,23 @@ pub fn main() !void {
             return;
         }
     }
-    try std.os.sigaction(std.os.SIG.INT, &.{
-        .handler = .{ .handler = sig_handler },
-        .mask = std.os.empty_sigset,
-        .flags = 0,
-    }, null);
 
-    var context = try CompilationContext.init(arena.allocator());
+    try install_sigint_handler();
 
-    const in = std.io.getStdIn();
-    var r = std.io.bufferedReader(in.reader());
+    const in = std.io.getStdIn().reader();
     var msg_buf: [4096]u8 = undefined;
+    var context = try CompilationContext.init(arena.allocator());
     while (true) {
         print(">> ", .{});
-        const expr = r.reader().readUntilDelimiterOrEof(&msg_buf, '\n') catch break orelse break;
+        const expr = in.readUntilDelimiterOrEof(&msg_buf, '\n') catch break orelse break;
+        if (expr.len == 0)
+            continue;
 
         var tmp_arena = std.heap.ArenaAllocator.init(std.heap.c_allocator);
         var tmp_alloc = tmp_arena.allocator();
         defer tmp_arena.deinit();
 
-        if (expr.len > 1 and expr[0] == ':') {
+        if (expr[0] == ':') {
             const cmdstr = std.mem.trim(u8, expr[1..], " \t");
             const cmd = Command.parse(cmdstr) orelse {
                 print("Unrecognized builtin command '{s}', see :help\n", .{cmdstr});
@@ -202,13 +209,13 @@ pub fn main() !void {
                     print("{s}\n", .{try std.mem.join(tmp_alloc, " ", command.items)});
                 },
                 .source => print("{s}", .{try context.source("// next expr", tmp_alloc)}),
-                .quit => break,
+                .quit => return,
                 .help => print("{s}\n", .{command_help}),
             }
             continue;
         }
 
-        const compile_result = try write_and_compile(context, expr, tmp_alloc);
+        const compile_result = try compile(context, expr, tmp_alloc);
         if (compile_result.term.Exited != 0) {
             print("{s}", .{compile_result.stderr});
             continue;
@@ -225,7 +232,7 @@ pub fn main() !void {
         if (clang.clang_isExpression(clang.clang_getCursorKind(new_expr_cursor)) != 0) {
             const tpe = clang.clang_getCursorType(new_expr_cursor);
             if (try expr_print_str(expr, tpe.kind, tmp_alloc)) |s| {
-                const comp_result = try write_and_compile(context, s, tmp_alloc);
+                const comp_result = try compile(context, s, tmp_alloc);
                 if (comp_result.term.Exited != 0) {
                     print("{s}", .{comp_result.stderr});
                     continue;
