@@ -1,4 +1,5 @@
 const std = @import("std");
+const print = std.debug.print;
 
 const clang = @cImport(@cInclude("clang-c/Index.h"));
 const SOURCE = @embedFile("./source.c");
@@ -156,7 +157,7 @@ pub fn main() !void {
     const args = try std.process.argsAlloc(arena.allocator());
     for (args[1..]) |arg| {
         if (std.mem.eql(u8, arg, "-h") or std.mem.eql(u8, arg, "--help")) {
-            std.debug.print("{s}\n{s}\n", .{ help_text, command_help });
+            print("{s}\n{s}\n", .{ help_text, command_help });
             return;
         }
     }
@@ -172,7 +173,7 @@ pub fn main() !void {
     var r = std.io.bufferedReader(in.reader());
     var msg_buf: [4096]u8 = undefined;
     while (true) {
-        std.debug.print(">> ", .{});
+        print(">> ", .{});
         const expr = r.reader().readUntilDelimiterOrEof(&msg_buf, '\n') catch break orelse break;
 
         var tmp_arena = std.heap.ArenaAllocator.init(std.heap.c_allocator);
@@ -182,7 +183,7 @@ pub fn main() !void {
         if (expr.len > 1 and expr[0] == ':') {
             const cmdstr = std.mem.trim(u8, expr[1..], " \t");
             const cmd = Command.parse(cmdstr) orelse {
-                std.debug.print("Unrecognized builtin command '{s}', see :help\n", .{cmdstr});
+                print("Unrecognized builtin command '{s}', see :help\n", .{cmdstr});
                 continue;
             };
             switch (cmd) {
@@ -198,18 +199,18 @@ pub fn main() !void {
                 },
                 .command => {
                     const command = try context.compilation_command(tmp_alloc);
-                    std.debug.print("{s}\n", .{try std.mem.join(tmp_alloc, " ", command.items)});
+                    print("{s}\n", .{try std.mem.join(tmp_alloc, " ", command.items)});
                 },
-                .source => std.debug.print("{s}", .{try context.source("// next expr", tmp_alloc)}),
+                .source => print("{s}", .{try context.source("// next expr", tmp_alloc)}),
                 .quit => break,
-                .help => std.debug.print("{s}\n", .{command_help}),
+                .help => print("{s}\n", .{command_help}),
             }
             continue;
         }
 
         const compile_result = try write_and_compile(context, expr, tmp_alloc);
         if (compile_result.term.Exited != 0) {
-            std.debug.print("{s}", .{compile_result.stderr});
+            print("{s}", .{compile_result.stderr});
             continue;
         }
 
@@ -226,7 +227,7 @@ pub fn main() !void {
             if (try expr_print_str(expr, tpe.kind, tmp_alloc)) |s| {
                 const comp_result = try write_and_compile(context, s, tmp_alloc);
                 if (comp_result.term.Exited != 0) {
-                    std.debug.print("{s}", .{comp_result.stderr});
+                    print("{s}", .{comp_result.stderr});
                     continue;
                 }
             }
@@ -237,12 +238,12 @@ pub fn main() !void {
             .argv = &.{BINFILE},
         });
         if (run_result.term.Exited != 0) {
-            std.debug.print("Exited with {}!\n{s}", .{ run_result.term.Exited, run_result.stderr });
+            print("Exited with {}!\n{s}", .{ run_result.term.Exited, run_result.stderr });
             continue;
         }
 
-        std.debug.print("{s}", .{run_result.stdout});
+        print("{s}", .{run_result.stdout});
         try context.exprs.append(try arena.allocator().dupe(u8, expr));
     }
-    std.debug.print("\n", .{});
+    print("\n", .{});
 }
