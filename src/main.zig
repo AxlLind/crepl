@@ -46,21 +46,30 @@ const CompilationContext = struct {
 };
 
 const Command = enum {
-    printSource,
+    source,
     quit,
     help,
 
-    const info = [_]struct { []const []const u8, Command, []const u8 }{
-        .{ &.{"print-source"}, .printSource, "print the C source being compiled" },
-        .{ &.{ "q", "quit" }, .quit, "quit the repl" },
-        .{ &.{ "h", "help" }, .help, "print this help text" },
+    const info = [_]struct {
+        cmds: []const []const u8,
+        cmd: Command,
+        help: []const u8,
+    }{
+        // zig fmt: off
+        .{ .cmds = &.{"source"},      .cmd = .source, .help = "print the C source being compiled" },
+        .{ .cmds = &.{ "q", "quit" }, .cmd = .quit,   .help = "quit the repl" },
+        .{ .cmds = &.{ "h", "help" }, .cmd = .help,   .help = "print this help text" },
+        // zig fmt: on
     };
 
     fn parse(s: []const u8) ?Command {
-        for (info) |t| {
-            for (t.@"0") |cmd| {
-                if (std.mem.eql(u8, s, cmd))
-                    return t.@"1";
+        for (info) |i| {
+            for (i.cmds) |cmd| {
+                if (!std.mem.startsWith(u8, s, cmd))
+                    continue;
+                if (s.len > cmd.len and s[cmd.len] != ' ')
+                    continue;
+                return i.cmd;
             }
         }
         return null;
@@ -73,14 +82,14 @@ const command_help = blk: {
     var columns = 0;
     for (Command.info, 0..) |t, i| {
         var s: []const u8 = "";
-        for (t.@"0") |cmd| {
+        for (t.cmds) |cmd| {
             s = s ++ ", " ++ cmd;
         }
         lines[i] = s[2..];
         columns = @max(columns, lines[i].len);
     }
     for (lines, 0..) |l, i| {
-        text = text ++ "\n" ++ l ++ (" " ** (columns - l.len)) ++ "  - " ++ Command.info[i].@"2";
+        text = text ++ "\n" ++ l ++ (" " ** (columns - l.len)) ++ "  - " ++ Command.info[i].help;
     }
     break :blk text;
 };
@@ -171,7 +180,7 @@ pub fn main() !void {
                 continue;
             };
             switch (cmd) {
-                .printSource => std.debug.print("{s}", .{try context.source("// next expr", tmp_alloc)}),
+                .source => std.debug.print("{s}", .{try context.source("// next expr", tmp_alloc)}),
                 .quit => break,
                 .help => std.debug.print("{s}\n", .{command_help}),
             }
