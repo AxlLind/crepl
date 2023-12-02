@@ -46,6 +46,7 @@ const CompilationContext = struct {
 };
 
 const Command = enum {
+    flag,
     source,
     quit,
     help,
@@ -56,6 +57,7 @@ const Command = enum {
         help: []const u8,
     }{
         // zig fmt: off
+        .{ .cmds = &.{"flag"},        .cmd = .flag,   .help = "add a compiler flag" },
         .{ .cmds = &.{"source"},      .cmd = .source, .help = "print the C source being compiled" },
         .{ .cmds = &.{ "q", "quit" }, .cmd = .quit,   .help = "quit the repl" },
         .{ .cmds = &.{ "h", "help" }, .cmd = .help,   .help = "print this help text" },
@@ -133,6 +135,7 @@ fn write_and_compile(context: CompilationContext, expr: []const u8, allocator: s
     defer cfile.close();
     try cfile.writeAll(try context.source(expr, allocator));
     const cmd = try context.compilation_command(allocator);
+    std.debug.print("{s}\n", .{cmd.items});
     return std.ChildProcess.run(.{ .allocator = allocator, .argv = cmd.items });
 }
 
@@ -180,6 +183,12 @@ pub fn main() !void {
                 continue;
             };
             switch (cmd) {
+                .flag => {
+                    var it = std.mem.split(u8, std.mem.trim(u8, expr[5..], " \t"), " ");
+                    while (it.next()) |flag| {
+                        try context.compiler_flags.append(try arena.allocator().dupe(u8, flag));
+                    }
+                },
                 .source => std.debug.print("{s}", .{try context.source("// next expr", tmp_alloc)}),
                 .quit => break,
                 .help => std.debug.print("{s}\n", .{command_help}),
