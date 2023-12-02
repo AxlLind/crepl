@@ -14,22 +14,34 @@ const help_text =
 ;
 
 const CompilationContext = struct {
+    compiler: []u8,
+    compiler_flags: std.ArrayList([]u8),
     exprs: std.ArrayList([]u8),
     includes: std.ArrayList([]u8),
 
     fn init(allocator: std.mem.Allocator) !CompilationContext {
         return .{
+            .compiler = try allocator.dupe(u8, "gcc"),
+            .compiler_flags = std.ArrayList([]u8).init(allocator),
             .exprs = std.ArrayList([]u8).init(allocator),
             .includes = std.ArrayList([]u8).init(allocator),
         };
     }
 
-    fn get_source(self: CompilationContext, expr: []const u8, allocator: std.mem.Allocator) ![]u8 {
+    fn source(self: CompilationContext, expr: []const u8, allocator: std.mem.Allocator) ![]u8 {
         const include_str = try std.mem.join(allocator, "\n", self.includes.items);
         defer allocator.free(include_str);
         const expr_str = try std.mem.join(allocator, "\n  ", self.exprs.items);
         defer allocator.free(expr_str);
         return std.fmt.allocPrint(allocator, SOURCE, .{ .includes = include_str, .exprs = expr_str, .expr = expr });
+    }
+
+    fn compilation_command(self: CompilationContext, allocator: std.mem.Allocator) !std.ArrayList([]const u8) {
+        var cmd = std.ArrayList([]const u8).init(allocator);
+        try cmd.append(self.compiler);
+        try cmd.appendSlice(self.compiler_flags.items);
+        try cmd.appendSlice(&.{ TMPFILE, "-o", BINFILE });
+        return cmd;
     }
 };
 
@@ -110,11 +122,9 @@ fn get_last_child(c: clang.CXCursor) ?clang.CXCursor {
 fn write_and_compile(context: CompilationContext, expr: []const u8, allocator: std.mem.Allocator) !std.ChildProcess.RunResult {
     var cfile = try std.fs.createFileAbsolute(TMPFILE, .{ .truncate = true });
     defer cfile.close();
-    try cfile.writeAll(try context.get_source(expr, allocator));
-    return std.ChildProcess.run(.{
-        .allocator = allocator,
-        .argv = &.{ "gcc", TMPFILE, "-o", BINFILE },
-    });
+    try cfile.writeAll(try context.source(expr, allocator));
+    const cmd = try context.compilation_command(allocator);
+    return std.ChildProcess.run(.{ .allocator = allocator, .argv = cmd.items });
 }
 
 fn sig_handler(_: c_int) callconv(.C) void {
@@ -161,7 +171,7 @@ pub fn main() !void {
                 continue;
             };
             switch (cmd) {
-                .printSource => std.debug.print("{s}", .{try context.get_source("// next expr", tmp_alloc)}),
+                .printSource => std.debug.print("{s}", .{try context.source("// next expr", tmp_alloc)}),
                 .quit => break,
                 .help => std.debug.print("{s}\n", .{command_help}),
             }
